@@ -1,5 +1,5 @@
 ---
-title: "Final Presentation"
+title: "California Wildfire Analysis"
 author: Ethan Anghelache
 output: html_document
 ---
