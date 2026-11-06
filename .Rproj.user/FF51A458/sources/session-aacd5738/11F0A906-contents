@@ -1,0 +1,15 @@
+---
+title: "ClassNotesWeek6"
+output: html_document
+---
+
+
+
+```{r}
+#Load Data
+emissions <- read.csv("data_download/emissions_data.csv")
+gdp_data <- read.csv("data_download/gdp_data.csv")
+
+
+```
+

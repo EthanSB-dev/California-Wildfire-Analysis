@@ -1,0 +1,1 @@
+"0","lines(exp(pred_rich$fit) ~ tree_seq, col = ""red"", lwd = 2)"

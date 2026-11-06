@@ -3,7 +3,7 @@
     "path": "~/Coding/California-Wildfire-Analysis/Final Presentation.Rmd",
     "project_path": "Final Presentation.Rmd",
     "type": "r_markdown",
-    "hash": "1721919602",
+    "hash": "811467790",
     "contents": "",
     "dirty": false,
     "created": 1793909871292.0,
@@ -12,15 +12,15 @@
     "properties": {
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "1,36",
+        "cursorPosition": "17,10",
         "scrollLine": "0"
     },
     "folds": "",
-    "lastKnownWriteTime": 1793910470,
+    "lastKnownWriteTime": 1793993632,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1793910470030,
+    "last_content_update": 1793993632657,
     "read_only": false,
     "read_only_alternatives": []
 }

@@ -1,0 +1,5 @@
+"0",""
+"0",""
+"0","hist(lab5$City.wide.Max, main = ""City-wide max richness"","
+"0","     xlab = ""Number of indicator species"","
+"0","     col = ""dodgerblue"", border = ""black"")"

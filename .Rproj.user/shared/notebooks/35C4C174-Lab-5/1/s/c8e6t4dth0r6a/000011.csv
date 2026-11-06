@@ -1,0 +1,2 @@
+"0","hist(lab5$logArea, main = ""log(Area)"", xlab = ""log(Area)"","
+"0","     col = ""dodgerblue"", border = ""black"")"

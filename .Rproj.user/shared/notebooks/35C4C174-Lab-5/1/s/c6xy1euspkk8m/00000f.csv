@@ -1,0 +1,6 @@
+"0","# How much tree cover for a 25% increase in richness?"
+"0","delta_tree <- log(1.25) / b[""Tree""]"
+"0",""
+"0","data.frame(change_needed = round(delta_tree, 3),"
+"0","           current_mean  = round(mean(lab5$Tree), 3),"
+"0","           observed_max  = round(max(lab5$Tree), 3))"

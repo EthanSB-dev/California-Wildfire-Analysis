@@ -1,0 +1,5 @@
+"0",""
+"0","# Does richness rise with city size?"
+"0","plot(lab5$logArea, lab5$City.wide.Max,"
+"0","     xlab = ""log(Area)"", ylab = ""City-wide max richness"","
+"0","     pch = 21, bg = ""dodgerblue"", col = ""black"", cex = 1.2)"

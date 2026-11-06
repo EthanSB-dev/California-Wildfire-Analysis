@@ -1,0 +1,1 @@
+"0","lines(exp(pred_rich$fit - 1.96 * pred_rich$se.fit) ~ tree_seq, col = ""red"", lty = 2)"

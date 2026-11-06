@@ -1,0 +1,211 @@
+---
+title: "Lab 5"
+author: "Ethan Anghelache"
+date: "2026-10-30"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+#### Question: How would you propose to increase biodiversity in low income cities?
+
+#### Methods: GLM of maximum species richness on tree cover and shrub/grass cover, controlling for income, with log(area) as an offset.Poisson model as quasipoisson and interpreted the effects as incidence rate ratios. (I used SQL to summarize the data by county and to check model fit and feasibility.)
+
+#### Data: Cooper et al. (2021), Frontiers in Conservation Science.
+
+### 1) Select variable(s) that you think could influence biodiversity while controlling for income.
+
+```{r}
+library(sqldf)
+lab5 <- read.csv("data_download/Lab5data.csv")
+head(lab5)
+```
+
+I chose tree and shrub/grass cover as predictors of maximum indicator species richness, since both provide the vegetated habitat that native wildlife depend on. Median income is included as a control because of the luxury effect: wealthier cities tend to have more greenery and more wildlife, so ignoring it would credit vegetation with income’s effect. I chose vegetation variables specifically because, unlike income or city size, they are something a city can directly change through tree planting and habitat restoration.
+
+### 2) Describe what your DAG looks like. 
+
+```{r}
+# Summary by county
+sqldf("
+  SELECT County,
+         COUNT(*)            AS n_cities,
+         AVG([City.wide.Max]) AS avg_max_rich,
+         AVG(Tree)           AS avg_tree,
+         AVG([Shrub.Grasses]) AS avg_shrub,
+         AVG(Income)         AS avg_income
+  FROM lab5
+  GROUP BY County
+")
+
+
+hist(lab5$City.wide.Max, main = "City-wide max richness",
+     xlab = "Number of indicator species",
+     col = "dodgerblue", border = "black")
+```
+
+
+The richness histogram is right-skewed and made of whole-number counts. Tree cover and shrub/grass cover point directly to maximum richness, while income points to both vegetation and richness, making it a confounder to control for. City area also affects richness, since larger cities hold more habitat, so I include it as an offset. The county summary supports this: Los Angeles and San Diego have nearly identical average incomes (about $84,000), yet San Diego averages twice the richness (10.7 vs. 5.1) and more than twice the shrub cover. For this reason I plan to use a Poisson model.
+
+### 3) Consider any additional controls that may be needed (such as area).
+
+```{r}
+lab5$logArea <- log(lab5$Area)
+
+par(mfrow = c(1, 2))
+hist(lab5$Area, main = "Area", xlab = "Area",
+     col = "dodgerblue", border = "black")
+hist(lab5$logArea, main = "log(Area)", xlab = "log(Area)",
+     col = "dodgerblue", border = "black")
+par(mfrow = c(1, 1))
+
+# Does richness rise with city size?
+plot(lab5$logArea, lab5$City.wide.Max,
+     xlab = "log(Area)", ylab = "City-wide max richness",
+     pch = 21, bg = "dodgerblue", col = "black", cex = 1.2)
+
+
+```
+
+City area needs to be controlled for because larger cities contain more habitat and more places for species to be recorded. Raw area is heavily right-skewed by a few very large cities, while log(Area) is roughly normal. I included log(Area) as an offset in the model, so richness is modeled relative to city size. The scatterplot confirms this. Richness rises steadily with log(Area), and the largest cities reach 14–15 species. 
+
+
+### 4) Check for multicollinearity.
+
+```{r}
+# Correlations among predictors and controls
+preds <- lab5[, c("Tree", "Shrub.Grasses", "Income")]
+round(cor(preds), 2)
+```
+
+All correlations among the predictors are weak, ranging from 0.18 (tree vs. shrub/grass cover) to 0.30 (shrub/grass cover vs. income). None come close to the 0.7 threshold for concerning collinearity, so all three variables can stay in the same model. 
+
+### 5) Fit a glm with a Poisson distribution (family).
+
+```{r}
+# Income in $10,000 units so its coefficient is readable
+lab5$Income10k <- lab5$Income / 10000
+
+summary(lab5[, c("Tree", "Shrub.Grasses")])  # proportion (0-1) or percent (0-100)?
+
+m1 <- glm(City.wide.Max ~ Tree + Shrub.Grasses + Income10k,
+          offset = log(Area),
+          family = poisson(link = "log"),
+          data = lab5)
+summary(m1)
+```
+
+I fit a Poisson GLM of maximum richness on tree cover, shrub/grass cover and income (per $10,000), with log(Area) as an offset. Income has the strongest and most consistent positive effect (coefficient 0.119), and tree cover is also positive (0.705). Shrub/grass cover is unexpectedly negative (−0.992), meaning cities with more shrub cover had fewer species per unit area once income and size were accounted for. Tree cover is very uneven across cities. The median city has 0% tree cover, while the maximum is 62%.
+
+### 6) Run model diagnostics to check for overdispersion (and refit with an alternative family if needed) and look at the residuals.
+
+```{r}
+with(m1, deviance / df.residual)
+
+# Refit with quasipoisson
+m2 <- glm(City.wide.Max ~ Tree + Shrub.Grasses + Income10k,
+          offset = log(Area),
+          family = quasipoisson(link = "log"),
+          data = lab5)
+summary(m2)
+
+# Residuals
+par(mfrow = c(1, 2))
+with(m2, hist(residuals, main = "Residuals", xlab = "Residual",
+              col = "dodgerblue", border = "black"))
+with(m2, plot(residuals ~ fitted.values,
+              xlab = "Fitted richness", ylab = "Residual",
+              pch = 21, bg = "dodgerblue", col = "black"))
+abline(h = 0, col = "red", lty = 2, lwd = 2)
+par(mfrow = c(1, 1))
+```
+
+```{r}
+# Compare against a null model
+m0 <- glm(City.wide.Max ~ 1,
+          offset = log(Area),
+          family = quasipoisson(link = "log"),
+          data = lab5)
+anova(m0, m2, test = "LRT")
+
+# Pseudo R-squared
+with(m2, 1 - deviance / null.deviance)
+```
+
+```{r}
+# SQL: cities the model misses most
+lab5$resid <- residuals(m2, type = "pearson")
+
+sqldf("
+  SELECT CITY_NAME, County, [City.wide.Max], ROUND(resid, 2) AS resid
+  FROM lab5
+  ORDER BY ABS(resid) DESC
+  LIMIT 5
+")
+```
+
+The dispersion ratio was 6.24, far above 1, so the data is overdispersed. I refit with a quasipoisson family, which kept the same coefficients but roughly tripled the standard errors. Compared with a null model, the full model reduced deviance from 854.7 to 674.1 and explains about 21% of the deviance in richness. The residuals are right-skewed, and the SQL table of the largest misses shows a clear pattern. The two biggest cities, Los Angeles and San Diego, were heavily overpredicted (residuals of −9.09 and −7.23), because the area offset assumes richness keeps growing with city size when it actually levels off at the 17-species maximum. 
+
+### 7) What is the incidence rate ratio for your selected variable(s)? If you selected multiple variables, which one is more important? How would you need to modify that variable to generate a reasonable increase in biodiversity in your city? Is that feasible?
+
+```{r}
+# Incidence rate ratios
+round(exp(coef(m2)), 3)
+
+# Which matters more? IRR per 1 SD increase
+b <- coef(m2)
+data.frame(variable  = c("Tree", "Shrub.Grasses"),
+           SD        = round(c(sd(lab5$Tree), sd(lab5$Shrub.Grasses)), 3),
+           IRR_perSD = round(exp(c(b["Tree"] * sd(lab5$Tree),
+                                   b["Shrub.Grasses"] * sd(lab5$Shrub.Grasses))), 3))
+
+tree_seq <- seq(min(lab5$Tree), max(lab5$Tree), length.out = 100)
+
+pred_data <- data.frame(Tree          = tree_seq,
+                        Shrub.Grasses = median(lab5$Shrub.Grasses),
+                        Income10k     = median(lab5$Income10k),
+                        Area          = median(lab5$Area))
+
+pred_rich <- predict(m2, newdata = pred_data, se.fit = TRUE)
+
+with(lab5, plot(City.wide.Max ~ Tree,
+                xlab = "Tree cover", ylab = "City-wide max richness",
+                pch = 21, col = "black",
+                bg = adjustcolor("dodgerblue", alpha = 0.5)))
+lines(exp(pred_rich$fit) ~ tree_seq, col = "red", lwd = 2)
+lines(exp(pred_rich$fit + 1.96 * pred_rich$se.fit) ~ tree_seq, col = "red", lty = 2)
+lines(exp(pred_rich$fit - 1.96 * pred_rich$se.fit) ~ tree_seq, col = "red", lty = 2)
+```
+
+```{r}
+# How much tree cover for a 25% increase in richness?
+delta_tree <- log(1.25) / b["Tree"]
+
+data.frame(change_needed = round(delta_tree, 3),
+           current_mean  = round(mean(lab5$Tree), 3),
+           observed_max  = round(max(lab5$Tree), 3))
+
+# SQL: is that feasible? Count cities pushed beyond the observed max
+lab5$tree_needed <- lab5$Tree + delta_tree
+max_tree <- max(lab5$Tree)
+
+sqldf(paste0("
+  SELECT County,
+         COUNT(*) AS n_cities,
+         ROUND(AVG(Tree), 3)        AS avg_tree_now,
+         ROUND(AVG(tree_needed), 3) AS avg_tree_needed,
+         SUM(CASE WHEN tree_needed > ", max_tree, " THEN 1 ELSE 0 END) AS n_beyond_observed
+  FROM lab5
+  GROUP BY County
+"))
+```
+
+The incidence rate ratio for tree cover is 2.02, but because cover is a proportion, that describes going from 0% to 100% tree cover. A more realistic 10-percentage-point increase multiplies expected richness by about 1.07, a 7% increase. Shrub/grass cover has an IRR of 0.37, meaning more shrub cover was associated with fewer species. Per standard deviation, shrub cover has the slightly larger effect in magnitude. However, its negative direction likely reflects the area offset penalizing large, shrub-heavy cities, so tree cover is the more meaningful variable for a city to act on. To raise richness by 25%, about 2 more species for a typical city, a city would need to add about 32 percentage points of tree cover, taking the average city from 4% to 36%, so by 9 times. This is not realistically feasible. Only a handful of cities in the data have more than 30% tree cover, and four cities would end up beyond the highest tree cover observed anywhere. The prediction plot also shows a very wide confidence band, so even large investments in trees carry a lot of uncertainty about the payoff. Income has a stronger effect, which suggests the luxury effect works through more than tree canopy alone, such as parks, protected open space and proximity to wildland.
+
+### 8) Summarize the findings in plain language: how would you explain your plan to your constituents? What effect would this investment have on making biodiversity more accessible? 
+
+The analysis of 112 California cities found that wealthier cities tend to have more native wildlife, even after accounting for city size, which means lower-income communities have less access to nature close to home. Tree cover helps, adding about 10% more tree cover is linked to roughly 7% more native species. However, it would take a very large expansion of tree canopy to add even two species, so planting trees alone will not close the gap quickly. I think to invest in street trees and park canopy in lowest-income areas, and to pair that with protecting and restoring the natural spaces we already have, such as creeks, hillsides and vacant lots. The cities in our data that outperformed expectations were the ones next to natural habitat, which shows that connecting neighborhoods to existing wild areas matters as much as adding greenery. This investment would mean residents who can’t easily drive to a regional park would see more birds, butterflies and other native wildlife on their own streets, making biodiversity something everyone in the city can experience rather than only those in wealthier neighborhoods.
+
+
+**Claude Code was used to help fix grammer and reformat sentences that didn't make sense in intital writing. Actual code and interpreted results were written by me.**

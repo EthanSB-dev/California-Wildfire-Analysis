@@ -4,3 +4,20 @@ author: Ethan Anghelache
 output: html_document
 ---
 
+Is there a correlation between population growth in California counties and high ignition density?
+
+```{r}
+#Load Libraries
+library(RSQLite) # SQL for Fire Data
+library(DBI)
+library(sf) # Spatial Data 
+library(dplyr) # Mapping Visualizations
+library(tmap)
+library(tigris) # Defining our Region 
+
+#Load Data
+ca_counties <- counties(state = "CA", cb = TRUE)
+```
+
+
+

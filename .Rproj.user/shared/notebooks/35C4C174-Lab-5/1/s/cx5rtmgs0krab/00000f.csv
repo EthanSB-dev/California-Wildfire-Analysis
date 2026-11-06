@@ -1,0 +1,3 @@
+"0","library(sqldf)"
+"0","lab5 <- read.csv(""data_download/Lab5data.csv"")"
+"0","head(lab5)"

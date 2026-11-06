@@ -1,0 +1,3 @@
+"0","with(m2, plot(residuals ~ fitted.values,"
+"0","              xlab = ""Fitted richness"", ylab = ""Residual"","
+"0","              pch = 21, bg = ""dodgerblue"", col = ""black""))"
