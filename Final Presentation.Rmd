@@ -89,6 +89,62 @@ legend("topright", legend = c("Human", "Lightning"),
 
 ## 4. Ignition density by county
 
+```{r}
+# Pull California fires from 2000–2020 (SQL)
+ca_fires <- dbGetQuery(con, "
+  SELECT FIRE_YEAR, NWCG_CAUSE_CLASSIFICATION AS cause,
+         FIRE_SIZE, LATITUDE, LONGITUDE
+  FROM Fires
+  WHERE STATE = 'CA'
+    AND FIRE_YEAR BETWEEN 2000 AND 2020
+")
+
+# Turn coordinates into map points, then match each fire to its county
+fires_sf <- st_as_sf(ca_fires, coords = c("LONGITUDE", "LATITUDE"), crs = 4269)
+fires_sf <- st_transform(fires_sf, st_crs(ca_counties))
+fires_sf <- st_join(fires_sf, ca_counties[, c("GEOID", "NAME")])
+
+nrow(fires_sf)
+```
+
+```{r}
+county_fires <- fires_sf |>
+  st_drop_geometry() |>
+  filter(!is.na(GEOID)) |>              # drop any points that fell offshore
+  group_by(GEOID) |>
+  summarise(n_total   = n(),
+            n_human   = sum(cause == "Human"),
+            n_natural = sum(cause == "Natural"))
+
+# Join counts to county shapes and calculate fires per 100 km² per year
+n_years <- 21  # 2000–2020
+
+ca_counties <- ca_counties |>
+  left_join(county_fires, by = "GEOID") |>
+  mutate(area_km2        = ALAND / 1e6,
+         human_density   = round(n_human   / area_km2 * 100 / n_years, 3),
+         natural_density = round(n_natural / area_km2 * 100 / n_years, 3),
+         human_share     = round(n_human / n_total, 3))
+```
+
+```{r}
+ca_counties |>
+  st_drop_geometry() |>
+  arrange(desc(human_density)) |>
+  select(NAME, n_human, n_natural, human_density, natural_density, human_share) |>
+  head(10)
+```
+
+```{r}
+tm_shape(ca_counties) +
+  tm_polygons(fill = c("human_density", "natural_density"),
+              fill.scale = tm_scale_intervals(style = "quantile",
+                                              values = "brewer.or_rd"),
+              fill.legend = tm_legend(title = "Fires per 100 km² per year")) +
+  tm_layout(panel.labels = c("Human-caused", "Lightning-caused"))
+```
+
+
 #### Ciations
 ```{r}
 citation("RSQLite")
