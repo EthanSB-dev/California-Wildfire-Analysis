@@ -143,7 +143,42 @@ tm_shape(ca_counties) +
               fill.legend = tm_legend(title = "Fires per 100 km² per year")) +
   tm_layout(panel.labels = c("Human-caused", "Lightning-caused"))
 ```
+## 5. WUI housing growth by county
+```{r}
+# Total WUI housing per county, 2000 vs. 2020
+county_wui <- ca_wui |>
+  st_drop_geometry() |>
+  mutate(GEOID = substr(BLK20, 1, 5)) |>
+  group_by(GEOID) |>
+  summarise(wui_hu_2000 = sum(HU2000[WUIFLAG2000 > 0], na.rm = TRUE),
+            wui_hu_2020 = sum(HU2020[WUIFLAG2020 > 0], na.rm = TRUE),
+            veg_pct     = mean(VEG2019PC, na.rm = TRUE))
 
+head(county_wui)
+```
+
+```{r}
+#Growth and join to counties
+ca_counties <- ca_counties |>
+  left_join(county_wui, by = "GEOID") |>
+  mutate(wui_growth_pct = round((wui_hu_2020 - wui_hu_2000) / wui_hu_2000 * 100, 3),
+         wui_new_units  = wui_hu_2020 - wui_hu_2000)
+
+ca_counties |>
+  st_drop_geometry() |>
+  arrange(desc(wui_growth_pct)) |>
+  select(NAME, wui_hu_2000, wui_hu_2020, wui_new_units, wui_growth_pct) |>
+  head(10)
+```
+
+```{r}
+#Map it
+tm_shape(ca_counties) +
+  tm_polygons(fill = "wui_growth_pct",
+              fill.scale = tm_scale_intervals(style = "quantile",
+                                              values = "brewer.purples"),
+              fill.legend = tm_legend(title = "WUI housing growth (%), 2000–2020"))
+```
 
 #### Ciations
 ```{r}

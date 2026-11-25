@@ -1,4 +1,0 @@
-"0",""
-"0","# Preview the WUI data (key columns only, without the shape data)"
-"0","head(st_drop_geometry(ca_wui)[, c(""BLK20"", ""fips"", ""HU2000"", ""HU2020"","
-"0","                                  ""WUIFLAG2000"", ""WUIFLAG2020"", ""VEG2019PC"")])"
