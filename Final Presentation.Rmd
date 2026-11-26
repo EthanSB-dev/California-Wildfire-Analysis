@@ -216,6 +216,89 @@ tm_shape(ca_counties) +
 
 ```
 
+**Takeaway (draft):** From 2000–2020, WUI housing grew most in the Central Valley, Sierra
+Nevada foothills, and Southern California. By percentage, San Joaquin (347.670%) and
+Stanislaus (221.065%) grew fastest, but from very small starting points; by number of new
+homes, Riverside added the most (165,083), followed by Orange, Sacramento, and Placer. Placer,
+Merced, and El Dorado rank in the top 10 for both WUI growth and human ignition density,
+suggesting these counties combine frequent human-caused fires with a rapidly growing number of
+homes at the wildland edge. Some northern and desert counties saw little growth or even
+declines in WUI housing.
+
+## 6 Which counties face rising risk?
+
+```{r}
+#Build both measures and classify counties
+ca_counties <- ca_counties |>
+  mutate(total_density      = round(n_total / area_km2 * 100 / n_years, 3),
+         wui_growth_density = round(wui_new_units / area_km2 * 100, 3),
+         ign_rank           = round(percent_rank(total_density), 3),
+         wui_rank           = round(percent_rank(wui_growth_density), 3),
+         risk_group = case_when(
+           ign_rank >= 0.5 & wui_rank >= 0.5 ~ "Rising risk",
+           ign_rank >= 0.5                   ~ "Fire-prone, slow growth",
+           wui_rank >= 0.5                   ~ "Growing, fewer fires",
+           TRUE                              ~ "Lower concern"),
+         risk_group = factor(risk_group,
+                             levels = c("Rising risk", "Fire-prone, slow growth",
+                                        "Growing, fewer fires", "Lower concern")))
+
+table(ca_counties$risk_group)
+```
+
+```{r}
+#Quadrant plots
+group_cols <- c("red", "orange", "mediumpurple", "gray70")
+pt_cols <- group_cols[as.numeric(ca_counties$risk_group)]
+
+plot(ca_counties$wui_rank, ca_counties$ign_rank,
+     main = "Ignition density vs. WUI housing growth by county",
+     xlab = "WUI housing growth (rank, 0 = lowest, 1 = highest)",
+     ylab = "Ignition density (rank, 0 = lowest, 1 = highest)",
+     pch = 21, bg = pt_cols, col = "black", cex = 1.3)
+abline(h = 0.5, v = 0.5, lty = 2, col = "gray40")
+
+rising <- ca_counties$risk_group == "Rising risk"
+text(ca_counties$wui_rank[rising], ca_counties$ign_rank[rising],
+     labels = ca_counties$NAME[rising], pos = 3, cex = 0.6)
+
+legend("bottomright", legend = levels(ca_counties$risk_group),
+       pt.bg = group_cols, pch = 21, cex = 0.7)
+```
+```{r}
+#Map the 4 groups
+tm_shape(ca_counties) +
+  tm_polygons(fill = "risk_group",
+              fill.scale = tm_scale_categorical(values = group_cols),
+              fill.legend = tm_legend(title = "County risk group"))
+```
+
+```{r}
+#The rising-risk counties
+ca_counties |>
+  st_drop_geometry() |>
+  filter(risk_group == "Rising risk") |>
+  mutate(combined_rank = round(ign_rank + wui_rank, 3)) |>
+  arrange(desc(combined_rank)) |>
+  select(NAME, total_density, wui_growth_density, ign_rank, wui_rank, combined_rank)
+
+```
+
+```{r}
+cor.test(ca_counties$total_density, ca_counties$wui_growth_density,
+         method = "spearman")
+```
+**Takeaway (draft):** WUI housing growth and ignition density are positively correlated
+across California counties (Spearman's rho = 0.553, p < 0.001): counties adding more homes at
+the wildland edge also tend to have more fires per area. Most counties fall high or low on
+both measures, with 22 of 58 in the "Rising risk" group, 22 in "Lower concern," and only 14
+mixed. Rising-risk counties form two belts: one from the Bay Area through Sacramento into the
+Sierra Nevada foothills, and one across Southern California (Los Angeles, Orange, Riverside,
+and San Diego). Contra Costa, Placer, and Alameda rank highest on both measures combined; San
+Francisco technically ranks first, but its very small area inflates both densities, so it is
+not a realistic wildfire hotspot. This correlation shows the two patterns overlap, not that
+housing growth causes fires.
+
 #### Ciations
 ```{r}
 citation("RSQLite")
