@@ -45,6 +45,14 @@ head(st_drop_geometry(ca_wui)[, c("BLK20", "fips", "HU2000", "HU2020",
 head(st_drop_geometry(ca_counties)[, c("NAME", "GEOID", "ALAND")])
 ```
 
+**Data overview (draft):** This project combines three sources. The FPA FOD fire database
+records every reported wildfire in the U.S. from 1992–2024, including where it started, when,
+how large it grew, and whether it was human- or lightning-caused; I query it with SQL and keep
+only California fires. The SILVIS WUI dataset gives housing counts, wild land vegetation, and
+WUI status for every census block in 1990, 2000, 2010, and 2020, filtered to California's
+[X] blocks. County boundaries from the U.S. Census (via `tigris`) tie everything together so
+fires and housing can be compared county by county.
+
 ## 2. California fires over time
 
 ```{r}
@@ -62,6 +70,13 @@ plot(fires_year$FIRE_YEAR, fires_year$n_fires, type = "b",
      pch = 21, bg = "dodgerblue", col = "black")
 ```
 
+**Takeaway (draft):** California averages roughly 7,000–9,000 wildfire ignitions per year,
+with no clear upward trend from 1992 to 2024. The biggest exception is 2005–2008, peaking at
+about 13,400 fires in 2007, though part of this spike may reflect changes in how agencies
+reported fires. Since fires have grown more destructive while the number of ignitions has
+stayed fairly flat, the more useful question we try to answer is not how many fires start, but where they
+start and who starts them.
+
 ## 3. Is it us? Human vs. lightning ignitions
 
 ```{r}
@@ -69,24 +84,33 @@ cause_year <- dbGetQuery(con, "
   SELECT FIRE_YEAR, NWCG_CAUSE_CLASSIFICATION AS cause, COUNT(*) AS n_fires
   FROM Fires
   WHERE STATE = 'CA'
-    AND NWCG_CAUSE_CLASSIFICATION IN ('Human', 'Natural')
   GROUP BY FIRE_YEAR, cause
 ")
 
 human   <- cause_year[cause_year$cause == "Human", ]
 natural <- cause_year[cause_year$cause == "Natural", ]
+unknown <- cause_year[cause_year$cause == "Missing data/not specified/undetermined", ]
 
 plot(human$FIRE_YEAR, human$n_fires, type = "b",
      ylim = c(0, max(cause_year$n_fires)),
-     main = "Human vs. lightning-caused ignitions in California",
+     main = "California wildfire ignitions by cause",
      xlab = "Year", ylab = "Number of fires",
      pch = 21, bg = "red", col = "black")
 lines(natural$FIRE_YEAR, natural$n_fires, type = "b",
       pch = 21, bg = "dodgerblue", col = "black")
-legend("topright", legend = c("Human", "Lightning"),
-       pt.bg = c("red", "dodgerblue"), pch = 21)
+lines(unknown$FIRE_YEAR, unknown$n_fires, type = "b",
+      pch = 21, bg = "gray70", col = "black")
+legend("topright", legend = c("Human", "Lightning", "Unknown"),
+       pt.bg = c("red", "dodgerblue", "gray70"), pch = 21)
 ```
 
+**Takeaway (draft):** Among fires with a known cause, humans start the large majority of
+California's wildfires. Human ignitions outnumber lightning ignitions every year from 1992 to
+2021, and in 2020, 88.7% of known-cause fires were human-caused. However, the share of fires
+with an unknown cause has grown from about 21% in 2015 to 45% in 2020, and above 78% after
+2021, likely because many recent cause investigations are incomplete. The apparent decline in
+human-caused fires is therefore uncertain, so this project limits cause-based analysis to
+2000–2020 and uses total ignitions for modeling.
 ## 4. Ignition density by county
 
 ```{r}
@@ -143,6 +167,16 @@ tm_shape(ca_counties) +
               fill.legend = tm_legend(title = "Fires per 100 km² per year")) +
   tm_layout(panel.labels = c("Human-caused", "Lightning-caused"))
 ```
+
+**Takeaway (draft):** From 2000–2020, 184,585 California wildfires were matched to counties.
+The highest human-caused ignition densities are in the Bay Area (San Francisco, Santa Cruz,
+Contra Costa) and Sierra Nevada foothill counties such as El Dorado, Placer, Nevada, and
+Butte, which are areas where homes spread into dry, wooded land. Lightning fires show almost
+the opposite pattern, concentrating in remote northern and high Sierra counties. Human
+ignition densities also run far higher, reaching 7.207 fires per 100 km² per year compared to
+a maximum of 1.499 for lightning. San Francisco's top ranking should be read with caution,
+since its small area means relatively few fires (183) produce a high density.
+
 ## 5. WUI housing growth by county
 ```{r}
 # Total WUI housing per county, 2000 vs. 2020
@@ -178,6 +212,8 @@ tm_shape(ca_counties) +
               fill.scale = tm_scale_intervals(style = "quantile",
                                               values = "brewer.purples"),
               fill.legend = tm_legend(title = "WUI housing growth (%), 2000–2020"))
+
+
 ```
 
 #### Ciations
