@@ -299,6 +299,139 @@ Francisco technically ranks first, but its very small area inflates both densiti
 not a realistic wildfire hotspot. This correlation shows the two patterns overlap, not that
 housing growth causes fires.
 
+## 7 Predicting Ignition Density
+```{r}
+#Housing per county for each decade
+county_housing <- ca_wui |>
+  st_drop_geometry() |>
+  mutate(GEOID = substr(BLK20, 1, 5)) |>
+  group_by(GEOID) |>
+  summarise(hu_2000  = sum(HU2000, na.rm = TRUE),
+            hu_2010  = sum(HU2010, na.rm = TRUE),
+            hu_2020  = sum(HU2020, na.rm = TRUE),
+            wui_2000 = sum(HU2000[WUIFLAG2000 > 0], na.rm = TRUE),
+            wui_2010 = sum(HU2010[WUIFLAG2010 > 0], na.rm = TRUE),
+            wui_2020 = sum(HU2020[WUIFLAG2020 > 0], na.rm = TRUE))
+```
+
+
+```{r}
+#Road length per county
+ca_roads <- primary_secondary_roads(state = "CA", progress_bar = FALSE) |>
+  st_transform(st_crs(ca_counties))
+
+road_pieces <- st_intersection(ca_roads, ca_counties[, "GEOID"])
+road_pieces$length_km <- as.numeric(st_length(road_pieces)) / 1000
+
+county_roads <- road_pieces |>
+  st_drop_geometry() |>
+  group_by(GEOID) |>
+  summarise(road_km = sum(length_km))
+```
+```{r}
+#Building county-year dataset
+# Fires per county per year
+fires_cy <- fires_sf |>
+  st_drop_geometry() |>
+  filter(!is.na(GEOID)) |>
+  count(GEOID, FIRE_YEAR, name = "n_fires")
+
+# County features that don't change by year
+county_static <- ca_counties |>
+  st_drop_geometry() |>
+  select(GEOID, NAME, area_km2, veg_pct) |>
+  left_join(county_housing, by = "GEOID") |>
+  left_join(county_roads, by = "GEOID") |>
+  mutate(road_km = ifelse(is.na(road_km), 0, road_km))
+
+# One row per county per year
+panel <- expand.grid(GEOID = ca_counties$GEOID, year = 2000:2020,
+                     stringsAsFactors = FALSE) |>
+  left_join(fires_cy, by = c("GEOID", "year" = "FIRE_YEAR")) |>
+  left_join(county_static, by = "GEOID") |>
+  mutate(n_fires = ifelse(is.na(n_fires), 0, n_fires),
+         # Fill in housing between census years
+         hu  = ifelse(year <= 2010,
+                      hu_2000 + (hu_2010 - hu_2000) * (year - 2000) / 10,
+                      hu_2010 + (hu_2020 - hu_2010) * (year - 2010) / 10),
+         wui = ifelse(year <= 2010,
+                      wui_2000 + (wui_2010 - wui_2000) * (year - 2000) / 10,
+                      wui_2010 + (wui_2020 - wui_2010) * (year - 2010) / 10),
+         # Everything per 100 km² so big and small counties compare fairly
+         ign_density     = n_fires / area_km2 * 100,
+         housing_density = hu / area_km2 * 100,
+         wui_density     = wui / area_km2 * 100,
+         wui_share       = wui / hu,
+         road_density    = road_km / area_km2 * 100) |>
+  filter(NAME != "San Francisco")
+
+nrow(panel)
+```
+```{r}
+#Train on 2000-2015, test on 2016-2020
+train <- panel[panel$year <= 2015, ]
+test  <- panel[panel$year >  2015, ]
+
+f <- ign_density ~ housing_density + wui_density + wui_share + road_density + veg_pct
+
+# Baseline: linear regression
+lm_fit <- lm(f, data = train)
+summary(lm_fit)
+
+# Machine learning: random forest
+set.seed(124)
+rf_fit <- randomForest(f, data = train, ntree = 500, importance = TRUE)
+rf_fit
+```
+
+```{r}
+#Compare models on the test years
+rmse <- function(actual, pred) sqrt(mean((actual - pred)^2))
+r2   <- function(actual, pred) 1 - sum((actual - pred)^2) / sum((actual - mean(actual))^2)
+
+lm_pred <- predict(lm_fit, test)
+rf_pred <- predict(rf_fit, test)
+
+data.frame(Model = c("Linear regression", "Random forest"),
+           RMSE  = round(c(rmse(test$ign_density, lm_pred),
+                           rmse(test$ign_density, rf_pred)), 3),
+           R2    = round(c(r2(test$ign_density, lm_pred),
+                           r2(test$ign_density, rf_pred)), 3))
+```
+```{r}
+#Which features matter? Human vs. natural
+imp <- sort(importance(rf_fit)[, "%IncMSE"])
+imp_cols <- ifelse(names(imp) == "veg_pct", "dodgerblue", "red")
+
+par(mar = c(5, 9, 4, 2))
+barplot(imp, horiz = TRUE, las = 1, col = imp_cols, border = "black",
+        main = "Random forest variable importance",
+        xlab = "Increase in prediction error when removed (%)")
+legend("bottomright", legend = c("Human", "Natural"),
+       fill = c("red", "dodgerblue"), cex = 0.8)
+par(mar = c(5, 4, 4, 2))
+```
+```{r}
+#Predicted vs. Actual
+plot(test$ign_density, rf_pred,
+     main = "Random forest: predicted vs. actual (2016–2020)",
+     xlab = "Actual ignition density", ylab = "Predicted ignition density",
+     pch = 21, bg = "dodgerblue", col = "black")
+abline(0, 1, lty = 2, col = "red")
+```
+
+**Takeaway (draft):** A random forest predicted 2016–2020 county ignition density better than
+linear regression (R² = 0.430 vs. 0.255; RMSE = 1.821 vs. 2.082 fires per 100 km²). Wildland
+vegetation was the single most important feature, but the four human features (WUI housing
+density, WUI share, housing density, and road density) ranked close behind and together
+carried most of the model's predictive power. In the linear model, WUI housing density was
+the only strong predictor: each additional 1,000 WUI homes per 100 km² was associated with
+about 0.423 more ignitions per 100 km² per year. Together, these results suggest wildfires
+start where people and fuel meet, not from either alone. The model underpredicts extreme
+years, likely because it includes no weather or drought data, and its training accuracy
+(75.51%) is higher than its test accuracy because counties repeat across years, so the test
+R² is the more reliable measure.
+
 #### Ciations
 ```{r}
 citation("RSQLite")
